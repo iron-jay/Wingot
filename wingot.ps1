@@ -89,7 +89,6 @@ Function GetDetails($App, $contentPath){
     $global:installCode = $null
     $global:installContent = $null
     $global:installArgument = $null  
-    $icon = $null 
     Try{
         Write-Host "Attemping to access downloaded .yaml file at $contentpath\$app" -ForegroundColor Blue
         $yaml = Get-Content (Get-ChildItem "$contentPath\$App" -Recurse -Filter "*.yaml").FullName | ConvertFrom-Yaml
