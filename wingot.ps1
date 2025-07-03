@@ -10,14 +10,6 @@ param(
     [Parameter()]
     [bool]$makeTaskSequence = $false
 )
-Try{
-    Import-Module (Join-Path $PSScriptRoot "powershell-yaml")
-    $here = $PWD
-}
-Catch{
-    Write-Host "Unable to find yaml module, exiting" -ForegroundColor Red
-    Break
-}
 
 #High Level Variables
 $MCMSiteCode = "CHQ"
@@ -33,6 +25,35 @@ $appsToDownload = @(
     "Oracle.JavaRuntimeEnvironment",
     "Citrix.Workspace.LTSR"
 )
+
+Try{
+    Import-Module (Join-Path $PSScriptRoot "powershell-yaml")
+    $here = $PWD
+}
+Catch{
+    Write-Host "Unable to find yaml module, exiting" -ForegroundColor Red
+    Break
+}
+
+If(!($DownloadOnly)){
+    try{
+        $SiteCode = $MCMSiteCode 
+        $ProviderMachineName = $MCMPrimarySiteServer
+        if((Get-Module ConfigurationManager) -eq $null) {
+            Import-Module "$($ENV:SMS_ADMIN_UI_PATH)\..\ConfigurationManager.psd1" -ErrorAction Stop
+        }
+        if((Get-PSDrive -Name $SiteCode -PSProvider CMSite -ErrorAction SilentlyContinue) -eq $null) {
+            New-PSDrive -Name $SiteCode -PSProvider CMSite -Root $ProviderMachineName -ErrorAction Stop
+        }
+    }
+    Catch{
+        Write-Host "Unable to connect with MCM. Is the console installed?" -ForegroundColor Red
+        break
+    }
+}
+
+
+
 
 Function Download($App){
     If (!(Test-Path "$DownloadLocation\Wingot_Downloads")){
@@ -128,20 +149,8 @@ Function CopytoLibrary($App, $contentPath){
     }
 }
 
-Function MCMConnection(){
-    $SiteCode = $MCMSiteCode 
-    $ProviderMachineName = $MCMPrimarySiteServer
-    if((Get-Module ConfigurationManager) -eq $null) {
-        Import-Module "$($ENV:SMS_ADMIN_UI_PATH)\..\ConfigurationManager.psd1" -ErrorAction Silent
-    }
-    if((Get-PSDrive -Name $SiteCode -PSProvider CMSite -ErrorAction SilentlyContinue) -eq $null) {
-        New-PSDrive -Name $SiteCode -PSProvider CMSite -Root $ProviderMachineName
-    }
-    Set-Location "$($SiteCode):\"
-}
-
 Function MCMWork(){
-    
+    Set-Location "$($SiteCode):\"
     Try{
         Write-Host "Attemping to make MCM Application for $global:appName $global:version." -ForegroundColor Blue
         If ($global:installCode -ne $null){
@@ -149,13 +158,12 @@ Function MCMWork(){
             New-CMApplication -Name "$global:appName $global:version" -Publisher $global:author -SoftwareVersion $global:version -AutoInstall $true | Out-Null
             Add-CMScriptDeploymentType -ApplicationName "$global:appName $global:version" -DeploymentTypeName "Install $global:appName $global:version" -InstallCommand "`"$global:installContent`" $global:installArgument" -AddDetectionClause $Detection -ContentLocation $global:appLibraryPath -InstallationBehaviorType InstallForSystem -LogonRequirementType WhetherOrNotUserLoggedOn | Out-Null
             Write-Host "Created $global:appName $global:version application." -ForegroundColor Green
-            $AppDeploy = $true
+            [bool]$AppDeploy = $true
         }
         else{
             Write-Host "Detection code for $global:appName doesn't exist in the YAML. This will need to be a package"
             New-CMPackage -Name "$global:appName $global:version" -Manufacturer $global:author -Version $global:version -Path $global:appLibraryPath | Out-Null
             New-CMProgram -StandardProgramName "Install $global:appName" -CommandLine "`"$global:installContent`" $global:installArgument" -PackageName "$global:appName $global:version" -ProgramRunType WhetherOrNotUserIsLoggedOn -RunMode RunWithAdministrativeRights -RunType Hidden | Out-Null
-            $PackageDeploy = $true
         }
         
     }
@@ -166,7 +174,7 @@ Function MCMWork(){
 
     Try{
         Write-Host "Starting distribution of $global:appName to $DPGroups" -ForegroundColor Blue
-        If ($AppDeploy -eq $true){
+        If ($AppDeploy){
             Start-CMContentDistribution -ApplicationName "$global:appName $global:version" -DistributionPointGroupName $DPGroups | Out-Null
         }
         Else{
@@ -179,7 +187,7 @@ Function MCMWork(){
     }
 
     $date = Get-Date -Format 'MM-yyyy'
-    If ($AppDeploy -eq $true){
+    If ($AppDeploy){
         if (!(Get-CMFolder -name "$MCMFolderName" -ParentFolderPath "Application")){
             Write-Host "Attempting to make $MCMFolderName folder." -ForegroundColor Blue
             New-CMFolder -ParentFolderPath "Application" -Name "$MCMFolderName" | Out-Null
@@ -232,7 +240,7 @@ Function MCMWork(){
     
 
 
-    If ($makeTaskSequence -eq $true){
+    If ($makeTaskSequence){
         if (!(Get-CMTaskSequence -name $date -Fast)){
             Write-Host "$date Task Sequence not found, creating." -ForegroundColor Blue
             New-CMTaskSequence -CustomTaskSequence -Name $date | Out-Null
@@ -244,7 +252,7 @@ Function MCMWork(){
         Try{
             Write-Host "Attempting to add $global:appName to $date TS" -ForegroundColor Blue
             $shortName = $global:appName.subString(0, [System.Math]::Min(40, $global:appName.Length)) 
-            if ($AppDeploy -eq $true){
+            if ($AppDeploy){
                 $prog = Get-CMApplication -Name "$global:appName $global:version"
                 $step = New-CMTSStepInstallApplication -Name "Install $shortName" -Application $prog
                 $ts = Get-CMTaskSequence -Name $date -Fast
@@ -266,13 +274,6 @@ Function MCMWork(){
     }
     Write-Host ""
 }
-
-Function CleanUp{
-    Set-Location $here
-    Write-Host "Cleaning up temp directory" -ForegroundColor Blue
-    Remove-Item "$DownloadLocation\Wingot_Downloads" -Recurse -Force
-    Write-Host "$DownloadLocation\Wingot_Downloads Removed." -ForegroundColor Green
-}
     
 
 foreach ($application in $appsToDownload){
@@ -283,30 +284,19 @@ foreach ($application in $appsToDownload){
     elseif ($MCMImportOnly){
         GetDetails $application $ImportContentPath
         CopytoLibrary $application $ImportContentPath
-        Try{
-            MCMConnection
-        }
-        Catch{
-            Write-Host "Unable to connect with MCM. Is the console installed?" -ForegroundColor Red
-            break
-        }
         MCMWork
     }
     Else{
         Download $application
         GetDetails $application $ImportContentPath
         CopytoLibrary $application $ImportContentPath
-        Try{
-            MCMConnection
-        }
-        Catch{
-            Write-Host "Unable to connect with MCM. Is the console installed?" -ForegroundColor Red
-            break
-        }
         MCMWork
-        $CleanNeeded = $true
+        [bool]$CleanNeeded = $true
     }
 }
 if ($CleanNeeded){
-    CleanUp
+    Set-Location $here
+    Write-Host "Cleaning up temp directory" -ForegroundColor Blue
+    Remove-Item "$DownloadLocation\Wingot_Downloads" -Recurse -Force
+    Write-Host "$DownloadLocation\Wingot_Downloads Removed." -ForegroundColor Green
 }
