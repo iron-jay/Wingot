@@ -26,17 +26,18 @@ $appsToDownload = @(
     "Citrix.Workspace.LTSR"
 )
 
-Try{
-    Import-Module (Join-Path $PSScriptRoot "powershell-yaml")
-    $here = $PWD
-}
-Catch{
-    Write-Host "Unable to find yaml module, exiting" -ForegroundColor Red
-    Break
-}
+
 
 If(!($DownloadOnly)){
-    try{
+    Try{
+        Import-Module (Join-Path $PSScriptRoot "powershell-yaml") -ErrorAction Stop
+        $here = $PWD
+    }
+    Catch{
+        Write-Host "Unable to find yaml module, exiting" -ForegroundColor Red
+        Break
+    }
+    Try{
         $SiteCode = $MCMSiteCode 
         $ProviderMachineName = $MCMPrimarySiteServer
         if((Get-Module ConfigurationManager) -eq $null) {
