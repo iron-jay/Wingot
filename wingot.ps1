@@ -1,14 +1,14 @@
 param(
 	[Parameter()]
-	[bool]$DownloadOnly = $false,
+	[switch]$DownloadOnly = $false,
     [Parameter()]
-	[bool]$MCMImportOnly = $false,
+	[switch]$MCMImportOnly = $false,
 	[Parameter()]
 	[string]$DownloadLocation = $PWD,
     [Parameter()]
 	[string]$ImportContentPath = "$PWD\Wingot_Downloads",
     [Parameter()]
-    [bool]$makeTaskSequence = $false
+    [switch]$makeTaskSequence = $false
 )
 
 #High Level Variables
@@ -157,7 +157,7 @@ Function MCMWork(){
             New-CMApplication -Name "$global:appName $global:version" -Publisher $global:author -SoftwareVersion $global:version -AutoInstall $true | Out-Null
             Add-CMScriptDeploymentType -ApplicationName "$global:appName $global:version" -DeploymentTypeName "Install $global:appName $global:version" -InstallCommand "`"$global:installContent`" $global:installArgument" -AddDetectionClause $Detection -ContentLocation $global:appLibraryPath -InstallationBehaviorType InstallForSystem -LogonRequirementType WhetherOrNotUserLoggedOn | Out-Null
             Write-Host "Created $global:appName $global:version application." -ForegroundColor Green
-            [bool]$AppDeploy = $true
+            [switch]$AppDeploy = $true
         }
         else{
             Write-Host "Detection code for $global:appName doesn't exist in the YAML. This will need to be a package"
@@ -290,7 +290,7 @@ foreach ($application in $appsToDownload){
         GetDetails $application $ImportContentPath
         CopytoLibrary $application $ImportContentPath
         MCMWork
-        [bool]$CleanNeeded = $true
+        [switch]$CleanNeeded = $true
     }
 }
 if ($CleanNeeded){
